@@ -81,6 +81,10 @@ class TelegramInterface:
     async def _send_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message):
         """Send message to Telegram"""
         try:
+            if not update.effective_chat:
+                logger.warning("Cannot send message - no effective chat")
+                return
+            
             chat_id = update.effective_chat.id
             if isinstance(message, dict):
                 if message["type"] == "text":
@@ -114,12 +118,16 @@ class TelegramInterface:
 
     async def _handle_tool_output(self, update: Update, context: ContextTypes.DEFAULT_TYPE, tool_output: ToolResult, tool_id: str):
         """Handle tool output"""
-        chat_id = update.effective_chat.id
-        logger.info(f"Handling tool output for tool_id: {tool_id} in chat {chat_id}")
-        
-        self.tools[tool_id] = tool_output
-        
         try:
+            if not update.effective_chat:
+                logger.warning("Cannot handle tool output - no effective chat")
+                return
+            
+            chat_id = update.effective_chat.id
+            logger.info(f"Handling tool output for tool_id: {tool_id} in chat {chat_id}")
+            
+            self.tools[tool_id] = tool_output
+            
             if hasattr(tool_output, 'base64_image') and tool_output.base64_image:
                 logger.info(f"Processing screenshot for chat {chat_id}")
                 try:
@@ -148,7 +156,10 @@ class TelegramInterface:
                     logger.info("Screenshot sent successfully")
                 except Exception as img_error:
                     logger.error(f"Error processing image: {str(img_error)}", exc_info=True)
-                    raise
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"Error processing image: {str(img_error)}"
+                    )
             
             if tool_output.output:
                 logger.info(f"Tool output for {chat_id}: {tool_output.output[:100]}...")
@@ -170,17 +181,26 @@ class TelegramInterface:
         except Exception as e:
             self.error_count += 1
             logger.error(f"Error handling tool output: {str(e)}", exc_info=True)
+            if update.effective_chat:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=f"Error handling tool output: {str(e)}"
+                )
             raise
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming messages"""
         try:
+            if not update.effective_user or not update.effective_chat or not update.message:
+                logger.warning("Received invalid update")
+                return
+
             if not await access_control.check_access(update):
                 await access_control.handle_unauthorized_access(update, context)
                 return
 
-            if not update.message or not update.message.text:
-                logger.warning("Received empty message")
+            if not update.message.text:
+                logger.warning("Received message without text")
                 return
 
             self.message_count += 1
@@ -188,7 +208,7 @@ class TelegramInterface:
             chat_id = update.effective_chat.id
             
             logger.info(
-                f"Message #{self.message_count} from user {user.id} ({user.username}) "
+                f"Message #{self.message_count} from user {user.id} (@{user.username or 'no_username'}) "
                 f"in chat {chat_id}: {update.message.text[:100]}..."
             )
 
@@ -240,21 +260,26 @@ class TelegramInterface:
         except Exception as e:
             self.error_count += 1
             logger.error(f"Error in handle_message: {str(e)}", exc_info=True)
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"Error: {str(e)}"
-            )
+            if update.effective_chat:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=f"Error: {str(e)}"
+                )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send welcome message when /start command is issued"""
     try:
+        if not update.effective_user or not update.effective_chat:
+            logger.warning("Received invalid update in start command")
+            return
+
         if not await access_control.check_access(update):
             await access_control.handle_unauthorized_access(update, context)
             return
             
         user = update.effective_user
         chat_id = update.effective_chat.id
-        logger.info(f"New user started the bot: {user.id} ({user.username}) in chat {chat_id}")
+        logger.info(f"New user started the bot: {user.id} (@{user.username or 'no_username'}) in chat {chat_id}")
         
         welcome_message = """
         🤖 Hello! I'm an AI assistant that can help you control the computer.
@@ -276,13 +301,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Clear conversation context"""
     try:
+        if not update.effective_user or not update.effective_chat:
+            logger.warning("Received invalid update in clear command")
+            return
+
         if not await access_control.check_access(update):
             await access_control.handle_unauthorized_access(update, context)
             return
             
         chat_id = update.effective_chat.id
         user = update.effective_user
-        logger.info(f"Clearing context for user {user.id} ({user.username}) in chat {chat_id}")
+        logger.info(f"Clearing context for user {user.id} (@{user.username or 'no_username'}) in chat {chat_id}")
         
         # Get interface from bot context
         interface = context.bot_data.get('interface')
@@ -311,7 +340,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Exception while handling an update:", exc_info=context.error)
     
     try:
-        if update and isinstance(update, Update) and update.effective_chat:
+        if isinstance(update, Update) and update.effective_chat:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="Sorry, an error occurred while processing your message."

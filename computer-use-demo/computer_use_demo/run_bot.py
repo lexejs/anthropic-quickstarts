@@ -3,14 +3,16 @@ Hot reloading runner for Telegram bot
 """
 
 import logging
+import os
+import select
+import subprocess
 import sys
 import time
 from pathlib import Path
-from watchdog.observers import Observer
+from typing import Union
+
 from watchdog.events import FileSystemEventHandler
-import subprocess
-import os
-import select
+from watchdog.observers import Observer
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
@@ -25,8 +27,10 @@ class BotReloader(FileSystemEventHandler):
         self.start_bot()
 
     def on_modified(self, event):
-        if event.src_path.endswith('.py'):
-            logger.info(f"Detected change in {event.src_path}")
+        # Fix for endswith type error - convert to string first
+        src_path = str(event.src_path)
+        if src_path.endswith('.py'):
+            logger.info(f"Detected change in {src_path}")
             self.should_reload = True
 
     def start_bot(self):
@@ -95,8 +99,8 @@ class BotReloader(FileSystemEventHandler):
                 self.start_bot()
 
     def run(self):
-        # Set up file observer
-        path = Path(__file__).parent
+        # Fix for path type in schedule
+        path = str(Path(__file__).parent)  # Convert Path to string
         observer = Observer()
         observer.schedule(self, path, recursive=True)
         observer.start()

@@ -2,8 +2,8 @@
 Configuration and access control for the Telegram bot
 """
 
-import os
 import logging
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 from telegram import Update
@@ -29,11 +29,11 @@ def init_config():
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not telegram_token:
         raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
-        
+    
     owner_id = int(os.getenv("TELEGRAM_OWNER_ID", "0"))
     if not owner_id:
         raise ValueError("TELEGRAM_OWNER_ID environment variable not set")
-        
+    
     # Optional settings with defaults
     allowed_users = set(map(int, os.getenv("TELEGRAM_ALLOWED_USERS", "").split(","))) if os.getenv("TELEGRAM_ALLOWED_USERS") else set()
     width = os.getenv("WIDTH", "1024")
@@ -63,22 +63,25 @@ class AccessControl:
     def __init__(self, owner_id: int, allowed_users: set[int]):
         self.owner_id = owner_id
         self.allowed_users = allowed_users
-        
+    
     async def check_access(self, update: Update) -> bool:
         """Check if user has access to the bot"""
+        if not update.effective_user:
+            return False
+            
         user_id = update.effective_user.id
         
         # Owner always has access
         if user_id == self.owner_id:
             return True
-            
+        
         # If no allowed users list - allow all
         if not self.allowed_users:
             return True
-            
+        
         # Check if user is in allowed list
         return user_id in self.allowed_users
-        
+    
     async def notify_owner(self, application: Application, message: str):
         """Send notification to the bot owner"""
         if self.owner_id:
@@ -90,16 +93,19 @@ class AccessControl:
                 logger.info(f"Notification sent to owner: {message}")
             except Exception as e:
                 logger.error(f"Failed to notify owner: {str(e)}", exc_info=True)
-                
+    
     async def handle_unauthorized_access(self, update: Update, context: Application):
         """Handle unauthorized access attempt"""
+        if not update.effective_user or not update.effective_chat:
+            return
+            
         user = update.effective_user
         chat_id = update.effective_chat.id
         logger.warning(f"Unauthorized access attempt from user {user.id} ({user.username}) in chat {chat_id}")
         
         # Notify owner
         await self.notify_owner(
-            context.application,
+            context,
             f"⚠️ Unauthorized access attempt!\nUser: {user.id} (@{user.username})\nChat: {chat_id}"
         )
         
