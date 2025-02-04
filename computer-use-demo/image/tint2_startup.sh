@@ -1,6 +1,15 @@
 #!/bin/bash
 echo "starting tint2 on display :$DISPLAY_NUM ..."
 
+# Wait for Xvfb to be ready
+for i in $(seq 1 5); do
+    if xdpyinfo >/dev/null 2>&1; then
+        break
+    fi
+    echo "Waiting for Xvfb... ($i/5)"
+    sleep 1
+done
+
 # Start tint2 and capture its stderr
 tint2 -c $HOME/.config/tint2/tint2rc 2>/tmp/tint2_stderr.log &
 
