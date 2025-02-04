@@ -1,26 +1,18 @@
 #!/bin/bash
+start_time=$(date +%s.%N)
 echo "starting tint2 on display :$DISPLAY_NUM ..."
-
-# Wait for Xvfb to be ready
-for i in $(seq 1 5); do
-    if xdpyinfo >/dev/null 2>&1; then
-        break
-    fi
-    echo "Waiting for Xvfb... ($i/5)"
-    sleep 1
-done
 
 # Start tint2 and capture its stderr
 tint2 -c $HOME/.config/tint2/tint2rc 2>/tmp/tint2_stderr.log &
 
 # Wait for tint2 window properties to appear
-timeout=30
+timeout=300
 while [ $timeout -gt 0 ]; do
     if xdotool search --class "tint2" >/dev/null 2>&1; then
         break
     fi
-    sleep 1
-    ((timeout--))
+    sleep 0.1
+    timeout=$((timeout - 1))
 done
 
 if [ $timeout -eq 0 ]; then
@@ -31,3 +23,7 @@ fi
 
 # Remove the temporary stderr log file
 rm /tmp/tint2_stderr.log
+
+end_time=$(date +%s.%N)
+duration=$(echo "$end_time - $start_time" | bc)
+echo "tint2 startup completed in $duration seconds"
